@@ -1,5 +1,5 @@
-// This is a script to get the TGeoManager from the edep-sim ROOT file and 
-// extract the module offsets for use in larnd-sim. To get the module offsets, 
+// This is a script to get the TGeoManager from an edep-sim ROOT file OR GDML and extract the module offsets. 
+// To get the module offsets, 
 // we need to recursively traverse the geometry tree until we encounter the LAr volumes, 
 // taking account of the translations and rotations along the way.
 
@@ -11,15 +11,8 @@
 #include <string>
 #include <functional>
 
-std::pair<bool, std::vector<std::vector<double>>> get_module_offsets(const char* fileName) {
+std::pair<bool, std::vector<std::vector<double>>> get_module_offsets(const char* fileName, bool isROOT) {
     
-    TFile file(fileName);
-
-    // If the file does not have a TGeoManager, return false
-    if (!file.Get("EDepSimGeometry")) {
-        return {false, {}};
-    }
-
     // Import the TGeoManager
     TGeoManager* geoManager = TGeoManager::Import(fileName);
 
@@ -32,7 +25,7 @@ std::pair<bool, std::vector<std::vector<double>>> get_module_offsets(const char*
     // Define a recursive function to traverse the geometry tree
     std::function<void(TGeoNode*, std::unique_ptr<TGeoHMatrix>)> traverse;
 
-    traverse = [&traverse, &globalOrigins](TGeoNode* node, std::unique_ptr<TGeoHMatrix> globalMatrix) {
+    traverse = [&traverse, &globalOrigins, &isROOT](TGeoNode* node, std::unique_ptr<TGeoHMatrix> globalMatrix) {
         if (globalMatrix == nullptr) {
             globalMatrix = std::make_unique<TGeoHMatrix>();  // identity matrix
         } else {
@@ -41,14 +34,19 @@ std::pair<bool, std::vector<std::vector<double>>> get_module_offsets(const char*
             localMatrix.Multiply(node->GetMatrix());
             globalMatrix = std::make_unique<TGeoHMatrix>(localMatrix);
         }
-
+        
+        std::string suffix = "";
+        if (isROOT) {
+                suffix = "_PV";
+        }
+        
         // The volume names we're looking for. Note that you may need to add
         // new names that correspond to new geometries (e.g. updated 2x2, FSD, ndlar)
-        std::vector<std::string> targetVolumes = {"volTPCActive_PV"}; // single module or SingleCube
+        std::vector<std::string> targetVolumes = {"volTPCActive" + suffix}; // single module or SingleCube
         // for 2x2, get the module wall volumes for the offsets
         for (int i = 0; i < 2; ++i) { 
             for (int j = 0; j < 2; ++j) {
-                targetVolumes.push_back("volLArActiveModWall" + std::to_string(i) + std::to_string(j) + "_PV");
+                targetVolumes.push_back("volLArActiveModWall" + std::to_string(i) + std::to_string(j) + suffix);
             }
         }
 
@@ -74,7 +72,7 @@ std::pair<bool, std::vector<std::vector<double>>> get_module_offsets(const char*
     // Start the traversal from the top volume
     traverse(topVolume, nullptr);
     
-    file.Close();
+    //file.Close();
     
     return {true, globalOrigins};
 }
